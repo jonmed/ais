@@ -28,7 +28,7 @@ set_defaults()
     ext4_args="-F -m 0 -T big"
     mirrorlist="/etc/pacman.d/mirrorlist"
     mirror_url="https://www.archlinux.org/mirrorlist/?country=${country_code}&use_mirror_status=on"
-    base_packages="base base-devel linux linux-firmware amd-ucode ntfs-3g"
+    base_packages="base base-devel linux linux-firmware amd-ucode ntfs-3g dhcpcd"
     swap_size="512M"
     trim_rule="ACTION==\"add|change\", KERNEL==\"sd[a-z]\", ATTR{queue/rotational}==\"0\", ATTR{queue/scheduler}=\"deadline\""
     loader_conf="default\tarch\ntimeout\t3\neditor\t0\n"
@@ -238,10 +238,10 @@ set_hostname()
 
     print_command "cat ${mount_point}/etc/hostname"
     cat ${mount_point}/etc/hostname
-    wait_key
-
-    print_command "echo \$hosts > hosts"
-    echo ${hosts} > ${mount_point}/etc/hosts
+    printf "\n"
+    
+    print_command "printf \${hosts} > /etc/hosts"
+    printf "${hosts}" > ${mount_point}/etc/hosts
     cat ${mount_point}/etc/hosts
     wait_key
 }
@@ -292,6 +292,14 @@ set_trimming()
 
     print_command "cat ${mount_point}/etc/udev/rules.d/60-schedulers.rules"
     cat ${mount_point}/etc/udev/rules.d/60-schedulers.rules
+    wait_key
+}
+
+networking()
+{
+    print_bold "Enabling networking"
+    print_command "(chroot) systemctl enable dhcpcd.service"
+    arch_chroot "systemctl enable dhcpcd.service"
     wait_key
 }
 
@@ -364,6 +372,7 @@ setup()
     set_clock
     set_locale
     set_trimming
+    networking
     copy_pacmanconf
     config_bootloader
     set_root_pass
