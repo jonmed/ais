@@ -1,0 +1,2 @@
+# ais
+Arch Install Script
