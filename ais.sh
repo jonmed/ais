@@ -1,386 +1,197 @@
 #!/bin/sh
+#------------------------------------------------------------------------------
+# File name:		ais.sh
+# Created:			2020-03-28 14:34
+# Author:           jon@jonmed.xyz
+# Last modified:	2020-04-04 14:04
+#
+# Description:
+#------------------------------------------------------------------------------
 
-set_defaults()
+init()
 {
-    # Terminal font 
-    Bold=$(tput bold)
-    Reset=$(tput sgr0)
-    Cyan=$(tput setaf 6)
+    LOG="ais.log"
+    TMP="/tmp/ais.tmp"
 
-    root_label="arch"
-    esp_label="ESP"
-    home_label="home"
+    [ -f "$LOG" ] && rm "$LOG"
+    [ -f "$TMP" ] && rm "$TMP"
 
-    mount_point="/mnt"
-    esp_mp="${mount_point}/boot"
-    home_mp="${mount_point}/home"
-    win_mp="${mount_point}/mnt/win"
+    TITLE="AIS - Arch Install Script - jonmed.xyz/ais.sh"
+    DIALOGOPTS="--cr-wrap --colors --backtitle \"${TITLE}\""
+    export DIALOGOPTS
 
-    esp_part="/dev/sda2"
-    win_part="/dev/sda4"
-
-    host_name="archlinux"
-    hosts="127.0.0.1\tlocalhost\n::1\tlocalhost\n127.0.1.1\t${host_name}.localdomain ${host_name}"
-    time_zone="America/Recife"
-    country_code="BR"
-
-    title="AIS - Archlinux Installation Script - jonmed.xyz/ais.sh"
-    ext4_args="-F -m 0 -T big"
-    mirrorlist="/etc/pacman.d/mirrorlist"
-    mirror_url="https://www.archlinux.org/mirrorlist/?country=${country_code}&use_mirror_status=on"
-    base_packages="base base-devel linux linux-firmware amd-ucode ntfs-3g dhcpcd"
-    swap_size="512M"
-    trim_rule="ACTION==\"add|change\", KERNEL==\"sd[a-z]\", ATTR{queue/rotational}==\"0\", ATTR{queue/scheduler}=\"deadline\""
-    loader_conf="default\tarch\ntimeout\t3\neditor\t0\n"
-    arch_conf="title\tArch Linux\nlinux\t/vmlinuz-linux\ninitrd\t/amd-ucode.img\ninitrd\t/initramfs-linux.img\noptions\troot=PARTLABEL=${root_label} rw\n"
+    DIALOG_OK=0
+    DIALOG_CANCEL=1
+    DIALOG_EXTRA=3
+    DIALOG_ESC=255
 }
 
-print_line()
+msg()
 {
-    printf "%$(tput cols)s\n" | tr ' ' '-'
-}
-
-print_bold()
-{
-    printf "${Bold}:: $1${Reset}\n\n"
-}
-
-print_title()
-{
-    clear
-    print_line
-    printf "  ${Bold}$1${Reset}\n"
-    print_line
-    printf "\n"
-}
-
-print_command()
-{
-    printf "${Bold}\$${Reset} ${Cyan}${1}${Reset}\n\n"
-}
-
-read_key()
-{
-    stty_old=$(stty -g)
-    stty raw -echo min 1 time 0
-    printf '%s' $(dd bs=1 count=1 2>/dev/null)
-    stty $stty_old
-}
-
-wait_key()
-{
-    sleep 1
-    printf "\n"
-    print_line
-    if [ "$1" = "" ]; then
-        printf "Press any key to continue (q to quit)..."
-    else
-        printf "$1"
-    fi
-    continue_key=$(read_key)
-    if [ "$continue_key" = "q" ]; then
-        printf "\nExiting AIS...\n"
-        umount -R ${mount_point}
-        exit 1
-    fi
-    print_title "$title"
-}
-
-arch_chroot()
-{
-    arch-chroot ${mount_point} sh -c "${1}"
-}
-
-sync_time()
-{
-    print_bold "Syncing time"
-    print_command "timedatectl set-ntp true"
-    timedatectl set-ntp true
-    wait_key
-}
-
-format_partitions()
-{
-    print_bold "Formating partitions"
-    print_command "mkfs.ext4 ${ext4_args} -L ${root_label} /dev/disk/by-partlabel/${root_label}"
-    mkfs.ext4 ${ext4_args} -L ${root_label} /dev/disk/by-partlabel/${root_label}
-    printf "\n"
-
-    #print_command "mkfs.ext4 ${ext4_args} -L ${home_label} /dev/disk/by-partlabel/${home_label}"
-    #mkfs.ext4 ${ext4_args} -L ${home_label} /dev/disk/by-partlabel/${home_label}
-    wait_key
-}
-
-mount_partitions()
-{
-    print_bold "Mounting partitions"
-    print_command "umount -R ${mount_point}"
-    umount -R ${mount_point}
-    printf "\n"
-
-    print_command "mount -v PARTLABEL=${root_label} ${mount_point}"
-    mount -v PARTLABEL=${root_label} ${mount_point}
-    printf "\n"
-
-    print_command "mkdir -vp ${esp_mp}"
-    mkdir -vp ${esp_mp}
-    printf "\n"
-
-    print_command "mount -v ${esp_part} ${esp_mp}"
-    mount -v ${esp_part} ${esp_mp}
-    printf "\n"
-
-    #print_command "mkdir -vp ${home_mp}"
-    #mkdir -vp ${home_mp}
-    #printf "\n"
-
-    #print_command "mount -v PARTLABEL=${home_label} ${home_mp}"
-    #mount -v PARTLABEL=${home_label} ${home_mp}
-    #printf "\n"
-
-    print_command "mkdir -vp ${win_mp}"
-    mkdir -vp ${win_mp}
-    printf "\n"
-
-    print_command "mount -v ${win_part} ${win_mp}"
-    mount -v ${win_part} ${win_mp}
-    wait_key
-}
-
-config_mirrorlist()
-{
-    print_bold "Config mirrorlist"
-    print_command "pacman -Syy"
-    pacman -Syy
-    printf "\n"
-
-    print_command "pacman --noconfirm --needed -S pacman-contrib"
-    pacman --noconfirm --needed -S pacman-contrib
-    printf "\n"
-
-    print_command "cp -v ${mirrorlist} ${mirrorlist}.backup"
-    cp -v ${mirrorlist} ${mirrorlist}.backup
-    printf "\n"
-
-    print_command "curl \"${mirror_url}\" | sed -e 's/^#Server/Server/' -e '/^#/d' | rankmirrors -n 5 - > ${mirrorlist}"
-    curl ${mirror_url} | sed -e 's/^#Server/Server/' -e '/^#/d' | rankmirrors -n 5 - > ${mirrorlist}
-    printf "\n"
-
-    print_command "cat ${mirrorlist}"
-    cat ${mirrorlist}
-    wait_key
-}
-
-clean_esp()
-{
-    print_bold "Cleaning ESP"
-    print_command "rm -v ${esp_mp}/vmlinuz-linux"
-    rm -v ${esp_mp}/vmlinuz-linux
-    printf "\n"
-
-    print_command "rm -v ${esp_mp}/*.img"
-    rm -v ${esp_mp}/*.img
-    wait_key
-}
-
-install_base()
-{
-    print_bold "Installing base system"
-    print_command "sed -i -e 's/^#Color/Color/;s/^#TotalDownload/TotalDownload/' /etc/pacman.conf"
-    sed -i -e 's/^#Color/Color/;s/^#TotalDownload/TotalDownload/' /etc/pacman.conf
-
-    print_command "pacstrap ${mount_point} ${base_packages}"
-    pacstrap ${mount_point} ${base_packages}
-    wait_key
-}
-
-create_swap()
-{
-    print_bold "Creating swap file"
-    print_command "(chroot) fallocate -l ${swap_size} /swapfile"
-    arch_chroot "fallocate -l ${swap_size} /swapfile"
-    printf "\n"
-
-    print_command "(chroot) chmod 600 /swapfile"
-    arch_chroot "chmod 600 /swapfile"
-    printf "\n"
-
-    print_command "(chroot) mkswap /swapfile"
-    arch_chroot "mkswap /swapfile"
-    printf "\n"
-
-    print_command "(chroot) swapon /swapfile"
-    arch_chroot "swapon /swapfile"
-    wait_key
-}
-
-generate_fstab()
-{
-    print_bold "Generate fstab"
-    print_command "genfstab -t PARTUUID -p ${mount_point} > ${mount_point}/etc/fstab"
-    genfstab -t PARTUUID -p ${mount_point} > ${mount_point}/etc/fstab
-    printf "\n"
-
-    # /mnt/swapfile -> /swapfile
-    print_command "sed -i \"s/\\${mount_point}//\" ${mount_point}/etc/fstab"
-    sed -i "s/\\${mount_point}//" ${mount_point}/etc/fstab
-
-    print_command "cat ${mount_point}/etc/fstab"
-    cat ${mount_point}/etc/fstab
-    wait_key
-}
-
-set_hostname()
-{
-    print_bold "Setting hostname"
-    print_command "echo $host_name > ${mount_point}/etc/hostname"
-    echo $host_name > ${mount_point}/etc/hostname
-
-    print_command "cat ${mount_point}/etc/hostname"
-    cat ${mount_point}/etc/hostname
-    printf "\n"
-    
-    print_command "printf \${hosts} > /etc/hosts"
-    printf "${hosts}" > ${mount_point}/etc/hosts
-    cat ${mount_point}/etc/hosts
-    wait_key
-}
-
-set_timezone()
-{
-    print_bold "Setting time zone"
-    print_command "(chroot) ln -svf /usr/share/zoneinfo/${time_zone} /etc/localtime"
-    arch_chroot "ln -svf /usr/share/zoneinfo/${time_zone} /etc/localtime"
-    wait_key
-}
-
-set_clock()
-{
-    print_bold "Setting system clock"
-    print_command "(chroot) hwclock -wu"
-    arch_chroot "hwclock -wu"
-    wait_key
-}
-
-set_locale()
-{
-    print_bold "Setting locale"
-    print_command "sed -i 's/^#en_US/en_US/' ${mount_point}/etc/locale.gen"
-    sed -i 's/^#en_US/en_US/' ${mount_point}/etc/locale.gen
-
-    print_command "echo \"LANG=en_US.UTF-8\" > ${mount_point}/etc/locale.conf"
-    echo "LANG=en_US.UTF-8" > ${mount_point}/etc/locale.conf
-
-    print_command "cat ${mount_point}/etc/locale.conf"
-    cat ${mount_point}/etc/locale.conf
-    printf "\n"
-
-    print_command "(chroot) locale-gen"
-    arch_chroot "locale-gen"
-    wait_key
-}
-
-set_trimming()
-{
-    print_bold "Setting trimming"
-    print_command "(chroot) systemctl enable fstrim.timer"
-    arch_chroot "systemctl enable fstrim.timer"
-    printf "\n"
-
-    print_command "printf \"${trim_rule}\" > ${mount_point}/etc/udev/rules.d/60-schedulers.rules"
-    printf "${trim_rule}" > ${mount_point}/etc/udev/rules.d/60-schedulers.rules
-
-    print_command "cat ${mount_point}/etc/udev/rules.d/60-schedulers.rules"
-    cat ${mount_point}/etc/udev/rules.d/60-schedulers.rules
-    wait_key
-}
-
-networking()
-{
-    print_bold "Enabling networking"
-    print_command "(chroot) systemctl enable dhcpcd.service"
-    arch_chroot "systemctl enable dhcpcd.service"
-    wait_key
-}
-
-copy_pacmanconf()
-{
-    print_bold "Copying pacman.conf"
-    print_command "cp -v /etc/pacman.conf ${mount_point}/etc/pacman.conf"
-    cp -v /etc/pacman.conf ${mount_point}/etc/pacman.conf
-    wait_key
-}
-
-set_root_pass()
-{
-    print_bold "Setting root password"
-    while true # will exit after passwd return 0 (success)
-    do
-        print_command "(chroot) passwd"
-        arch_chroot "passwd"
-        if [ $? -eq 0 ]; then
-            break
-        fi
-        wait_key "Press any key to retry (q to quit)..."
+    for line do
+        printf "%s\n" "$line"
     done
-    wait_key
 }
 
-config_bootloader()
+abort()
 {
-    print_bold "Configuring bootloader"
-    print_command "(chroot) bootctl install"
-    arch_chroot "bootctl install"
-    printf "\n"
+    message=$(msg "${1}" \
+                  "\n" \
+                  "Installation \Z1failed\Zn to complete." \
+                  "You can check the log file \Z4${LOG}\Zn for more detailed" \
+                  "error messages.")
+    dialog --title "Installation Failed" --msgbox "$message" 9 60
+    dialog --infobox "Exiting..." 0 0
+    echo "$1" >> "$LOG"
+    echo "Aborting." >> "$LOG"
+    finish; sleep 1; clear; exit 1
+}
 
-    print_command "printf \"${loader_conf}\" > ${esp_mp}/loader/loader.conf"
-    printf "${loader_conf}" > ${esp_mp}/loader/loader.conf 
+exit_install()
+{
+    message="Do you want to exit the installer?" 
+    if dialog --title "Exit Installer" --yesno "$message" 0 0; then
+        dialog --infobox "Exiting..." 0 0
+        finish; sleep 1; clear; exit 0
+    fi
+}
 
-    print_command "cat ${esp_mp}/loader/loader.conf"
-    cat ${esp_mp}/loader/loader.conf
-    printf "\n"
+greeting()
+{
+    while true; do
+        message=$(msg "This script will facilitate the installation of" \
+                      "\Z4Arch Linux.\Zn" \
+                      "\n" \
+                      "It will only work if:" \
+                      "* You are running an \ZbArch Linux\ZB environment." \
+                      "* You have \Zbroot\ZB privileges."
+                      "* You have an \Zbinternet connection\ZB.")
+        if dialog --title "AIS" --yes-label "OK" --no-label "Exit" \
+                --yesno "$message" 11 60; then
+            break
+        else
+            exit_install
+        fi 
+    done
+}
 
-    print_command "printf \"${arch_conf}\" > ${esp_mp}/loader/entries/arch.conf"
-    printf "${arch_conf}" > ${esp_mp}/loader/entries/arch.conf
+check_connection()
+{
+    while ! ping -w1 -c1 "www.archlinux.org" >/dev/null; do
+        while true; do
+            wired_dev=$(ip link | awk '/ens|eno|enp/ {print $2}' | sed 's/://;1!d')
+            wireless_dev=$(ip link | awk '/wlp/ {print $2}' | sed 's/://;1!d')
+            message=$(msg "\Z1Network connection not found.\Zn" \
+                          "\n" \
+                          "Choose which type of connection to setup:")
+            exec 3>&1
+            result=$(dialog --title "Error" --cancel-label "Exit" \
+                --menu "$message" 0 0 0 \
+                "Wired"     "" \
+                "Wireless"  "" 2>&1 1>&3)
+            code="$?"
+            exec 3>&-
+            if [ "$code" -ne "${DIALOG_OK}" ]; then
+                exit_install
+            else
+                case "$result" in
+                    Wired)    systemctl start dhcpcd@"${wired_dev}".service >/dev/null;;
+                    Wireless) wifi-menu "${wireless_dev}";;
+                esac
+                dialog --infobox "Checking connection..." 0 0; sleep 1
+                break
+            fi
+        done
+    done
+}
 
-    print_command "cat ${esp_mp}/loader/entries/arch.conf"
-    cat ${esp_mp}/loader/entries/arch.conf
-    wait_key
+install_req_pack()
+{
+    dialog --title "Installing Required Package" --infobox "Installing $1 package..." 3 60
+    pacman --noconfirm --needed -S "$1" >/dev/null || \
+        abort "pacman failed to install the $1 required package."
+}
+
+requirements()
+{
+    check_connection
+    req_packs=$(msg "dialog" \
+                    "parted" \
+                    "ntfs-3g" \
+                    "arch-install-scripts" \
+                    "pacman-contrib" \
+                    "archlinux-keyring")
+    echo "$req_packs" >"$TMP"
+    while read -r pack; do
+        install_req_pack "$pack"
+    done < "$TMP"
+}
+
+sync_clock()
+{
+    dialog --title "Synchronizing Clock" --infobox "Activating NTP..." 0 0
+    timedatectl set-ntp true
+}
+
+choose_device()
+{
+    while true; do
+        devices=$(lsblk -dnp -o NAME,SIZE,MODEL | \
+            awk '{printf("%s \"%6s %s\"\n", $1, $2, $3)}')
+        echo "$devices" > "$TMP"
+        exec 3>&1
+        result=$(dialog --title "Partitions" --menu \
+            "Choose a device to partition:" 0 0 0 --file "$TMP" 2>&1 1>&3)
+        code="$?"
+        exec 3>&-
+        [ "$code" -ne "${DIALOG_OK}" ] && return "$code"
+        device="$result"
+        clear
+        [ "$prog" = "parted" ] && parted -a opt "$device" || "$prog" "$device"
+        clear
+    done
+}
+
+partition_menu()
+{
+    while true; do
+        exec 3>&1
+        result=$(dialog --title "Partitions" --cancel-label "Exit" \
+            --extra-label "Skip" --menu \
+            "If you want to partition a device choose a program:" 0 0 0 \
+            "cgdisk" "" \
+            "gdisk" "" \
+            "parted" "" 2>&1 1>&3)
+        code="$?"
+        exec 3>&-
+        prog="$result"
+        case "$code" in
+            "${DIALOG_ESC}"|"${DIALOG_CANCEL}") exit_install; continue ;;
+            "${DIALOG_EXTRA}")  break ;;
+        esac
+
+        choose_device
+        [ "$?" -eq "${DIALOG_EXTRA}" ] && break
+    done
+}
+
+start_setup()
+{
+    partition_menu
+    finish
 }
 
 finish()
 {
-    umount -R ${mount_point}
-    printf "\n"
-    print_bold ":: Installation finished"
+    [ -f "$TMP" ] && rm "$TMP"
 }
 
-setup()
+# Start of script -----------------------------------------
+
+init
+greeting
 {
-    print_title "$title"
-
-    sync_time
-    format_partitions
-    mount_partitions
-    config_mirrorlist
-    clean_esp
-    install_base
-    create_swap
-    generate_fstab
-    set_hostname
-    set_timezone
-    set_clock
-    set_locale
-    set_trimming
-    networking
-    copy_pacmanconf
-    config_bootloader
-    set_root_pass
-    finish
-}
-
-set_defaults
-setup
-
-# vim: fdm=syntax
-#let g:sh_fold_enabled=1
+requirements
+sync_clock
+start_setup
+} 2>>"$LOG"
